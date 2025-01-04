@@ -100,14 +100,7 @@ GSResult<bool> send_packet_unix(const Host& host, const Data& payload) {
 
     // Set server end point (the broadcast addres)
     udpServer.sin_family = AF_INET;
-#if defined(__SWITCH__)
-    uint32_t ip, subnet_mask;
-    // Get the current IP address and subnet mask to calculate subnet broadcast address
-    nifmGetCurrentIpConfigInfo(&ip, &subnet_mask, nullptr, nullptr, nullptr);
-    udpServer.sin_addr.s_addr = ip | ~subnet_mask;
-#else
-    udpServer.sin_addr.s_addr = inet_addr(host.address.c_str());
-#endif
+	udpServer.sin_addr.s_addr = inet_addr(host.address.c_str());
     udpServer.sin_port = htons(9);
 
     brls::Logger::info("WakeOnLanManager: Sending magic packet to: '{}'",
@@ -153,23 +146,26 @@ GSResult<bool> send_packet_win32(const Host& host, const Data& payload) {
 
     // Set server end point (the broadcast addres)
     udpServer.sin_family = AF_INET;
-#if defined(__SWITCH__)
-    uint32_t ip, subnet_mask;
-    // Get the current IP address and subnet mask to calculate subnet broadcast address
-    nifmGetCurrentIpConfigInfo(&ip, &subnet_mask, nullptr, nullptr, nullptr);
-    udpServer.sin_addr.s_addr = ip | ~subnet_mask;
-#else
-    udpServer.sin_addr.s_addr = inet_addr(host.address.c_str());
-#endif
-    udpServer.sin_port = htons(9);
+	// Calculating the local broadcast IP address
+	uint32_t ip, subnet_mask;
+	nifmGetCurrentIpConfigInfo(&ip, &subnet_mask, nullptr, nullptr, nullptr);
+	udpServer.sin_addr.s_addr = ip | ~subnet_mask;
 
-    brls::Logger::info("WakeOnLanManager: Sending magic packet to: '{}'",
+	// Send to local
+	brls::Logger::info("WakeOnLanManager: Sending magic packet to local broadcast address: '{}'",
                     inet_ntoa(udpServer.sin_addr));
+	sendto(udpSocket, (const char*)payload.bytes(), sizeof(unsigned char) * 102,
+       0, (struct sockaddr*)&udpServer, sizeof(udpServer));
 
-    // Send the packet
-    sendto(udpSocket, (const char*)payload.bytes(), sizeof(unsigned char) * 102,
-           0, (struct sockaddr*)&udpServer, sizeof(udpServer));
-    return GSResult<bool>::success(true);
+	// Send to settings.json adress (public)
+	udpServer.sin_addr.s_addr = inet_addr(host.address.c_str());
+	brls::Logger::info("WakeOnLanManager: Sending magic packet to public IP: '{}'",
+                    inet_ntoa(udpServer.sin_addr));
+	return sendto(udpSocket, (const char*)payload.bytes(), sizeof(unsigned char) * 102,
+              0, (struct sockaddr*)&udpServer, sizeof(udpServer)) == -1
+       ? GSResult<bool>::failure("Failed to send magic packet to public IP")
+       : GSResult<bool>::success(true);
+
 }
 #endif
 
